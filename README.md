@@ -1,2 +1,2 @@
 # pawn-neural-network
-https://amxmodx-es.com/Thread-Inteligencia-artificial-redes-neuronales
+Passing old posts to GitHub. https://amxmodx-es.com/Thread-Inteligencia-artificial-redes-neuronales
