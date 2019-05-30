@@ -54,7 +54,7 @@ public plugin_init() {
 		//automatic (using the range predefined), between 8% and 27% less efficient
 		mse += neural_learn(Float:{ 0.0, 255.0, 0.0 }, Float:{ 1.0 }, rate);
 
-		//must be in range with min and max in the first neural_layer
+		//must be in range with the min and max defineds
 		mse += neural_learn(Float:{ 0.0, 0.0, 255.0 }, Float:{ 1.0 }, rate); //light
 		mse += neural_learn(Float:{ 0.0, 0.0, 0.0 }, Float:{ 0.0 }, rate); //dark
 		mse += neural_learn(Float:{ 100.0, 100.0, 100.0 }, Float:{ 1.0 }, rate); //light
@@ -137,6 +137,5 @@ public benchmark() {
 	server_print("neural_think = %d -> %d", time_start, time_end); //24 -> 33 (9s)
 	
 	//with this results I'm able to make real time thinking without problem
-	//and with a decent cpu you will too
 }
 ```
