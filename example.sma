@@ -1,6 +1,6 @@
 #include <amxmodx>
 
-#include neural_multi
+#include neural
 
 public plugin_init() {
 	register_plugin("Neural network example", "1.0.0", "LuKks");
