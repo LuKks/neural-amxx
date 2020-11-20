@@ -6,6 +6,7 @@ const NEURAL_MAX_LAYERS = 6;
 enum Neuron {
 	Float:N_weights[NEURAL_MAX_SIZE],
 	Float:N_bias,
+	Float:N_momentums[NEURAL_MAX_SIZE + 1], // +1 for bias
 	N_max_inputs,
 	Float:N_data[NEURAL_MAX_SIZE],
 	Float:N_activation,
@@ -17,7 +18,9 @@ enum Layer {
 	N_id,
 	N_max_neurons,
 	Float:N_input_min[NEURAL_MAX_SIZE],
-	Float:N_input_max[NEURAL_MAX_SIZE]
+	Float:N_input_max[NEURAL_MAX_SIZE],
+	Float:N_rate,
+	Float:N_momentum
 };
 
 //on this way, we have everything allocated in memory
@@ -35,10 +38,10 @@ public neuron_create(total_inputs) {
 	//initialize the neuron with random values. Also can set them with zero
 	//but it's just to always randomize the output for same inputs before learn
 	for(new i; i < total_inputs; i++) {
-		neuron[N_weights][i] = _:random_float(0.0, 1.0);
+		neuron[N_weights][i] = _:random_float(-1.0, 1.0);
 	}
 
-	neuron[N_bias] = _:random_float(0.0, 1.0);
+	neuron[N_bias] = _:random_float(-1.0, 1.0);
 
 	return neuron;
 }
@@ -63,10 +66,18 @@ public Float:neuron_think(neuron[Neuron], Float:inputs[]) {
 	return neuron[N_activation] = _:(1 / (1 + floatpower(2.718281828459045, -out)));
 }
 
+public Float:neuron_optimizer(neuron[Neuron], layer[Layer], index, Float:value) {
+	neuron[N_momentums][index] = _:(value + (layer[N_momentum] * neuron[N_momentums][index]));
+	return neuron[N_momentums][index];
+}
+
 //layers
 public layer_create(total_neurons, total_inputs) {
 	layers[layers_id][N_id] = layers_id;
 	layers[layers_id][N_max_neurons] = total_neurons;
+
+	layers[layers_id][N_rate] = _:0.001;
+	layers[layers_id][N_momentum] = _:0.999;
 
 	for(new i; i < total_neurons; i++) {
 		layers[layers_id][N_input_min][i] = _:0.0; //just to be clear
@@ -142,7 +153,7 @@ public Float:neural_think(Float:inputs[]) {
 	return outs;
 }
 
-public Float:neural_learn_raw(Float:inputs[], Float:outputs[], Float:rate) {
+public Float:neural_learn_raw(Float:inputs[], Float:outputs[]) {
 	static o, l, h, n, w; //are not random letters, everyone are for loops index: output, layer, hidden, next and weight
 
 	static output_layer[Layer];
@@ -171,40 +182,41 @@ public Float:neural_learn_raw(Float:inputs[], Float:outputs[], Float:rate) {
 	//hidden layers
 	//loop hidden layers (-2 to avoid the output layer)
 	for(l = layers_id - 2; l >= 0; l--) {
+		static nexts[Layer];
+		nexts = layers[l + 1]; //get neurons of next layer; with +1 we recover the output layer
+
 		//loop neurons of hidden layer
 		for(h = 0; h < layers[l][N_max_neurons]; h++) {
 			static hidden[Neuron];
 			hidden = neurons[l][h]; //get neuron
 
-			static nexts[Layer];
-			nexts = layers[l + 1]; //get neurons of next layer; with +1 we recover the output layer
-
-			hidden[N_error] = _:0.0;
-
 			//loop neurons of next layer
+			hidden[N_error] = _:0.0;
 			for(n = 0; n < nexts[N_max_neurons]; n++) {
 				//on this way, neurons are connected with the next ones respectively
 				hidden[N_error] += (neurons[nexts[N_id]][n][N_weights][h] * neurons[nexts[N_id]][n][N_delta]);
-
-				static neuron[Neuron];
-				neuron = neurons[nexts[N_id]][n]; //get neuron
-
-				//finally learn!
-				for(w = 0; w < neuron[N_max_inputs]; w++) {
-					//the weights are updated based on the actual data and delta (activation * error)
-					//also the learning will be more or less critical considering the custom learning rate
-					neuron[N_weights][w] += (neuron[N_data][w] * neuron[N_delta] * rate);
-				}
-
-				//the bias is not affected directly by the data provided, it's the reason for being bias!
-				neuron[N_bias] += (neuron[N_delta] * rate);
-
-				neurons[nexts[N_id]][n] = neuron; //update neuron
 			}
-
 			hidden[N_delta] = _:(hidden[N_activation] * (1.0 - hidden[N_activation]) * hidden[N_error]); //sigmoid derivated * error
 
 			neurons[l][h] = hidden; //update neuron
+		}
+
+		for(n = 0; n < nexts[N_max_neurons]; n++) {
+			static neuron[Neuron];
+			neuron = neurons[nexts[N_id]][n]; //get neuron
+
+			//finally learn!
+			for(w = 0; w < neuron[N_max_inputs]; w++) {
+				//the weights are updated based on the actual data and delta (activation * error)
+				//also the learning will be more or less critical considering the custom learning rate
+				//neuron[N_weights][w] += (neuron[N_data][w] * neuron[N_delta] * nexts[N_rate]);
+				neuron[N_weights][w] += neuron_optimizer(neuron, nexts, w, neuron[N_data][w] * neuron[N_delta] * nexts[N_rate]);
+			}
+
+			//the bias is not affected directly by the data provided, it's the reason for being bias!
+			neuron[N_bias] += neuron_optimizer(neuron, nexts, neuron[N_max_inputs], neuron[N_delta] * nexts[N_rate]);
+
+			neurons[nexts[N_id]][n] = neuron; //update neuron
 		}
 	}
 
@@ -212,8 +224,22 @@ public Float:neural_learn_raw(Float:inputs[], Float:outputs[], Float:rate) {
 	return mse / output_layer[N_max_neurons];
 }
 
-public Float:neural_learn(Float:inputs[], Float:outputs[], Float:rate) {
-	return neural_learn_raw(neural_input_values(inputs), outputs, rate);
+public Float:neural_learn(Float:inputs[], Float:outputs[]) {
+	return neural_learn_raw(neural_input_values(inputs), outputs);
+}
+
+public neural_rate(Float:value) {
+	static i;
+	for(i = 0; i < layers_id; i++) {
+		layers[i][N_rate] = _:value;
+	}
+}
+
+public neural_momentum(Float:value) {
+	static i;
+	for(i = 0; i < layers_id; i++) {
+		layers[i][N_momentum] = _:value;
+	}
 }
 
 /*public Float:neural_values(Float:values[], bool:input) {
